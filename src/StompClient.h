@@ -17,7 +17,8 @@
 
 #include "Stomp.h"
 #include "StompCommandParser.h"
-#include <WebsocketsClient.h>
+#include "AsyncTCP.h"
+
 
 namespace Stomp {
 
@@ -34,17 +35,25 @@ class StompClient {
        @param sockjs bool               - Set to true to indicate that the connection uses SockJS protocol
     */
     StompClient(
-      WebSocketsClient &wsClient,
+      //WebSocketsClient &wsClient,
       const char *host,
       const int port,
       const char *url,
       const bool sockjs
-    ) : _wsClient(wsClient), _host(host), _port(port), _url(url), _sockjs(sockjs), _id(0), _state(DISCONNECTED), _heartbeats(0),
+    ) : _client(), _host(host), _port(port), _url(url), _sockjs(sockjs), _id(0), _state(DISCONNECTED), _heartbeats(0),
       _connectHandler(0), _disconnectHandler(0), _errorHandler(0), _commandCount(0) {
 
-      _wsClient.onEvent( [this] (WStype_t type, uint8_t * payload, size_t length) {
-        this->_handleWebSocketEvent(type, payload, length);
-      } );
+      _client.onConnect([this](void * arg, AsyncClient * client) {
+        this->_onConnect(client);
+      });
+
+      _client.onDisconnect([this](void * arg, AsyncClient * client) {
+        this->_onDisconnect(client);
+      });
+
+      _client.onData([this](void * arg, AsyncClient * client, void * data, size_t len) {
+        this->_onData(client, (uint8_t*)data, len);
+      });
 
       for (int i = 0; i < STOMP_MAX_SUBSCRIPTIONS; i++) {
         _subscriptions[i].id = -1;
@@ -60,14 +69,16 @@ class StompClient {
     */
     void begin() {
       // connect to websocket
-      _wsClient.begin(_host, _port, _socketUrl());
-      _wsClient.setExtraHeaders();
+      if (!_client.connect(_host, _port)) {
+        Serial.println("Failed to connect");
+      }
     }
 
     void beginSSL() {
+      /*
       // connect to websocket
       _wsClient.beginSSL(_host, _port, _socketUrl());
-      _wsClient.setExtraHeaders();
+      _wsClient.setExtraHeaders();*/
     }
 
     /**
@@ -172,8 +183,8 @@ class StompClient {
     }
 
   private:
-
-    WebSocketsClient &_wsClient;
+    AsyncClient _client;
+    //WebSocketsClient &_wsClient;
     const char *_host;
     const int _port;
     const char *_url;
@@ -205,42 +216,24 @@ class StompClient {
       return socketUrl;
     }
 
-    void _handleWebSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-      Serial.println("Event" + String((char*)payload));
+    void _onConnect(AsyncClient *client) {
+      Serial.println("Connected");
+      _connectStomp();
+    }
 
-      switch (type) {
-        case WStype_DISCONNECTED:
-          _state = DISCONNECTED;
-          break;
-
-        case WStype_CONNECTED:
-          _connectStomp();
-          break;
-
-        case WStype_TEXT:
-
-          if (_sockjs) {
-            if (payload[0] == 'h') {
-              _heartbeats++;
-            } else if (payload[0] == 'o') {
-              _connectStomp();
-            } else if (payload[0] == 'a') {
-              String frame = (char*) payload;
-              String text = unframe(frame);
-              StompCommand command = StompCommandParser::parse(text);
-              _handleCommand(command);
-            }
-          } else {
-            String text = (char*) payload;
-            StompCommand command = StompCommandParser::parse(text);
-            _handleCommand(command);
-          }
-
-          break;
-
-        case WStype_BIN:
-          break;
+    void _onDisconnect(AsyncClient *client) {
+      Serial.println("Disconnected");
+      _state = DISCONNECTED;
+      if (_disconnectHandler) {
+        _disconnectHandler(StompCommand());
       }
+    }
+
+    void _onData(AsyncClient *client, uint8_t *data, size_t len) {
+      Serial.println("Data received");
+      String text = String((char*)data).substring(0, len);
+      StompCommand command = StompCommandParser::parse(text);
+      _handleCommand(command);
     }
 
     void _connectStomp() {
@@ -351,7 +344,7 @@ class StompClient {
       }
       msg += "\\n\\u0000\"]";
 
-      _wsClient.sendTXT(msg.c_str(), msg.length() + 1);
+      _client.write(msg.c_str(), msg.length());
       _commandCount++;
     }
 
@@ -372,7 +365,7 @@ class StompClient {
       }
       msg += "\\n\\u0000\"]";
 
-      _wsClient.sendTXT(msg.c_str(), msg.length() + 1);
+      _client.write(msg.c_str(), msg.length());
       _commandCount++;
     }
 

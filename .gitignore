@@ -30,3 +30,14 @@
 *.exe
 *.out
 *.app
+
+.pio
+.clang_complete
+.gcc-flags.json
+*Thumbs.db
+/data/www
+/src/WWWData.h
+/interface/build
+/interface/node_modules
+/interface/.eslintcache
+.vscode

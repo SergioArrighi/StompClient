@@ -5,6 +5,8 @@
 #define STOMP_MAX_COMMAND_HEADERS 16
 #endif
 
+#include <Arduino.h>
+
 namespace Stomp {
 
 /**
