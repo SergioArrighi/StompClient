@@ -18,6 +18,7 @@
 #include "Stomp.h"
 #include "StompCommandParser.h"
 #include "AsyncTCP.h"
+#include <base64.h>
 
 
 namespace Stomp {
@@ -69,9 +70,11 @@ class StompClient {
     */
     void begin() {
       // connect to websocket
-      if (!_client.connect(_host, _port)) {
-        Serial.println("Failed to connect");
-      }
+      // connect to websocket
+        Serial.println("Attempting to connect to WebSocket server...");
+        if (!_client.connected() && !_client.connect(_host, _port)) {
+            Serial.println("Failed to connect");
+        }
     }
 
     void beginSSL() {
@@ -204,6 +207,7 @@ class StompClient {
     uint32_t _heartbeats;
     uint32_t _commandCount;
 
+    /*
     String _socketUrl() {
       String socketUrl = _url;
       if (_sockjs) {
@@ -214,11 +218,11 @@ class StompClient {
       }
 
       return socketUrl;
-    }
+    }*/
 
     void _onConnect(AsyncClient *client) {
       Serial.println("Connected");
-      _connectStomp();
+      _performWebSocketHandshake();
     }
 
     void _onDisconnect(AsyncClient *client) {
@@ -232,15 +236,35 @@ class StompClient {
     void _onData(AsyncClient *client, uint8_t *data, size_t len) {
       Serial.println("Data received");
       String text = String((char*)data).substring(0, len);
+      Serial.println((char*)data);
       StompCommand command = StompCommandParser::parse(text);
       _handleCommand(command);
+    }
+
+    void _performWebSocketHandshake() {
+        String handshake = "GET " + String(_url) + " HTTP/1.1\r\n";
+        handshake += "Host: " + String(_host) + ":" + String(_port) + "\r\n";
+        handshake += "Upgrade: websocket\r\n";
+        handshake += "Connection: Upgrade\r\n";
+        handshake += "Sec-WebSocket-Key: " + _generateWebSocketKey() + "\r\n";
+        handshake += "Sec-WebSocket-Version: 13\r\n\r\n";
+        _client.write(handshake.c_str());
+        _connectStomp();
+    }
+
+    String _generateWebSocketKey() {
+        uint8_t randomKey[16];
+        for (int i = 0; i < 16; ++i) {
+            randomKey[i] = random(0, 256);
+        }
+        return base64::encode(randomKey, 16);
     }
 
     void _connectStomp() {
       if (_state != OPENING) {
         _state = OPENING;
-        String msg[3] = { "CONNECT", "accept-version:1.1,1.0", "heart-beat:10000,10000" };
-        _send(msg, 3);
+        String msg[5] = { "CONNECT", "accept-version:1.1,1.0", "heart-beat:10000,10000", "login:guest", "passcode:guest" };
+        _send(msg, 5);
       }
     }
 
