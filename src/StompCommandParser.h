@@ -1,7 +1,8 @@
 #ifndef STOMP_MESSAGE_PARSER_H
 #define STOMP_MESSAGE_PARSER_H
 
-#include "Stomp.h"
+#include <Stomp.h>
+#include <Arduino.h>
 
 namespace Stomp {
 
